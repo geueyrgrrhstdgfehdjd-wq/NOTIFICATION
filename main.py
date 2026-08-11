@@ -88,15 +88,15 @@ class SingleSetupModal(discord.ui.Modal, title="ตั้งค่าและ�
     )
 
     async def on_submit(self, interaction: discord.Interaction):
-        # ⚡ ป้องกันไม่ตอบสนอง: สั่ง Defer ทันทีเป็นอันดับแรก (แสดงสถานะกำลังประมวลผลให้ทุกคนเห็น)
-        await interaction.response.defer(thinking=True, ephemeral=False)
+        # หน่วงเวลาประมวลผลป้องกัน Error ไม่ตอบสนอง
+        await interaction.response.defer(ephemeral=True)
 
         # 1. ค้นหาช่องข้อความ
         target_channel_name = self.channel_input.value.strip().lstrip("#")
         target_channel = discord.utils.get(interaction.guild.text_channels, name=target_channel_name)
 
         if not target_channel:
-            await interaction.followup.send(f"❌ ไม่พบช่องข้อความชื่อ **#{target_channel_name}** ในเซิร์ฟเวอร์นี้", ephemeral=False)
+            await interaction.followup.send(f"❌ ไม่พบช่องข้อความชื่อ **#{target_channel_name}** ในเซิร์ฟเวอร์นี้", ephemeral=True)
             return
 
         # 2. แปลงค่า Emoji
@@ -156,26 +156,25 @@ class SingleSetupModal(discord.ui.Modal, title="ตั้งค่าและ�
             else:
                 await target_channel.send(content=content_text, embed=embed)
 
-            await interaction.followup.send(f"✅ ส่งประกาศพร้อมแท็ก @everyone ไปยังช่อง {target_channel.mention} เรียบร้อยแล้ว!", ephemeral=False)
+            await interaction.followup.send(f"✅ ส่งประกาศพร้อมแท็ก @everyone ไปยังช่อง {target_channel.mention} เรียบร้อยแล้ว!", ephemeral=True)
         except Exception as err:
-            await interaction.followup.send(f"❌ ไม่สามารถส่งข้อความได้ โปรดตรวจสอบสิทธิ์ของบอท: {err}", ephemeral=False)
+            await interaction.followup.send(f"❌ ไม่สามารถส่งข้อความได้ โปรดตรวจสอบสิทธิ์ของบอท: {err}", ephemeral=True)
 
 
 # ------------------------------------------
-# 2. แผงควบคุม (แสดงผลสาธารณะ Public UI)
+# 2. แผงควบคุม (แสดงผล Public UI)
 # ------------------------------------------
 class SetupControlView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
 
-    @discord.ui.button(label="🚀 คลิกที่นี่เพื่อกรอกข้อมูลและส่งประกาศ", style=discord.ButtonStyle.success, custom_id="btn_single_setup_v2")
+    @discord.ui.button(label="🚀 คลิกที่นี่เพื่อกรอกข้อมูลและส่งประกาศ", style=discord.ButtonStyle.success, custom_id="btn_single_setup_v3")
     async def btn_single_setup(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # เรียก Modal ขึ้นมาทันที (การเรียก Modal ห้ามใส่ defer)
         await interaction.response.send_modal(SingleSetupModal())
 
 
 # ------------------------------------------
-# 3. คำสั่ง /setup (ทุกคนมองเห็นได้)
+# 3. คำสั่ง /setup
 # ------------------------------------------
 @bot.tree.command(name="setup", description="เปิดหน้าต่างสร้างประกาศแจ้งเตือนพร้อมแท็กทุกคน")
 async def setup(interaction: discord.Interaction):
@@ -190,7 +189,6 @@ async def setup(interaction: discord.Interaction):
         ),
         color=discord.Color.green(),
     )
-    # ปรับ ephemeral=False เพื่อให้ทุกคนในช่องเห็น UI นี้
     await interaction.response.send_message(embed=embed, view=SetupControlView(), ephemeral=False)
 
 
@@ -202,4 +200,4 @@ TOKEN = os.getenv("DISCORD_TOKEN")
 if TOKEN:
     bot.run(TOKEN.strip())
 else:
-    print("❌ ไม่พบ DISCORD_TOKEN")
+    print("❌ ไม่พบ DISCORD_TOKEN ใน Environment Variables")
