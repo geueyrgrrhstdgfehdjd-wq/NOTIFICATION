@@ -13,9 +13,7 @@ if sys.platform == 'win32':
 intents = discord.Intents.default()
 intents.message_content = True
 
-
 class NotificationBot(commands.Bot):
-
     def __init__(self):
         super().__init__(command_prefix="!", intents=intents)
         self.selected_channel_id = None
@@ -24,58 +22,60 @@ class NotificationBot(commands.Bot):
     async def setup_hook(self):
         try:
             await self.tree.sync()
-            print("✅ Sync Slash Commands successfully")
+            print("✅ ซิงค์ Slash Commands (/setup) เรียบร้อยแล้ว")
         except Exception as e:
-            print(f"❌ Sync Error: {e}")
-
+            print(f"❌ เกิดข้อผิดพลาดในการซิงค์: {e}")
 
 bot = NotificationBot()
 
-
-class MessageModal(discord.ui.Modal, title="Set Notification Details"):
+# ------------------------------------------
+# 1. หน้าต่างกรอกข้อความ (Modal)
+# ------------------------------------------
+class MessageModal(discord.ui.Modal, title="กรอกรายละเอียดข้อความแจ้งเตือน"):
     title_input = discord.ui.TextInput(
-        label="Title",
+        label="หัวข้อประกาศ",
         style=discord.TextStyle.short,
-        placeholder="Enter announcement title...",
+        placeholder="เช่น โปรโมชั่นพิเศษ / ปิดปรับปรุงระบบ",
         required=True,
         max_length=100,
     )
 
     message_input = discord.ui.TextInput(
-        label="Message Content",
+        label="รายละเอียดข้อความ",
         style=discord.TextStyle.paragraph,
-        placeholder="Enter announcement details...",
+        placeholder="พิมพ์เนื้อหาข้อความแจ้งเตือนที่นี่...",
         required=True,
         max_length=2000,
     )
 
     image_url_input = discord.ui.TextInput(
-        label="Image Banner URL (Optional)",
+        label="ลิงก์รูปแบนเนอร์ (ถ้าไม่มีให้เว้นว่าง)",
         style=discord.TextStyle.short,
-        placeholder="https://...png or jpg",
+        placeholder="https://...png หรือ jpg",
         required=False,
     )
 
     button_label_input = discord.ui.TextInput(
-        label="Website Button Name (Optional)",
+        label="ชื่อปุ่มเว็บไซต์ (ถ้าไม่มีให้เว้นว่าง)",
         style=discord.TextStyle.short,
-        placeholder="e.g. Visit Website",
+        placeholder="เช่น เข้าสู่เว็บไซต์ / สั่งซื้อสินค้า",
         required=False,
         max_length=80,
     )
 
     button_url_input = discord.ui.TextInput(
-        label="Website URL (Optional)",
+        label="URL เว็บไซต์ (ถ้าไม่มีให้เว้นว่าง)",
         style=discord.TextStyle.short,
         placeholder="https://your-website.com",
         required=False,
     )
 
     async def on_submit(self, interaction: discord.Interaction):
+        # ตอบรับ Interaction ทันทีเพื่อป้องกัน Timeout
+        await interaction.response.defer(ephemeral=True)
+
         if not bot.selected_channel_id:
-            await interaction.response.send_message(
-                "❌ Please select a channel first!", ephemeral=True
-            )
+            await interaction.followup.send("❌ กรุณาเลือกช่องที่จะส่งข้อความก่อนครับ!", ephemeral=True)
             return
 
         channel = bot.get_channel(bot.selected_channel_id)
@@ -88,20 +88,21 @@ class MessageModal(discord.ui.Modal, title="Set Notification Details"):
             )
 
             embed.set_footer(
-                text=f"Announced by {interaction.user.display_name}",
+                text=f"ประกาศโดย {interaction.user.display_name}",
                 icon_url=interaction.user.display_avatar.url if interaction.user.display_avatar else None,
             )
 
             if self.image_url_input.value and self.image_url_input.value.strip():
                 embed.set_image(url=self.image_url_input.value.strip())
 
+            # ปุ่มลิงก์เว็บไซต์แนบไปกับข้อความประกาศ
             out_view = None
             if self.button_url_input.value and self.button_label_input.value:
                 url = self.button_url_input.value.strip()
                 if not (url.startswith("http://") or url.startswith("https://")):
                     url = "https://" + url
 
-                out_view = discord.ui.View()
+                out_view = discord.ui.View(timeout=None)
                 out_view.add_item(
                     discord.ui.Button(
                         label=self.button_label_input.value,
@@ -117,109 +118,98 @@ class MessageModal(discord.ui.Modal, title="Set Notification Details"):
                 else:
                     await channel.send(embed=embed)
 
-                await interaction.response.send_message(
-                    f"✅ Sent notification to {channel.mention} successfully!",
-                    ephemeral=True,
-                )
+                await interaction.followup.send(f"✅ ส่งประกาศไปยังช่อง {channel.mention} เรียบร้อยแล้ว!", ephemeral=True)
             except Exception as err:
-                await interaction.response.send_message(
-                    f"❌ Failed to send message: {err}",
-                    ephemeral=True,
-                )
+                await interaction.followup.send(f"❌ ส่งข้อความไม่สำเร็จ โปรดตรวจสอบสิทธิ์ของบอท: {err}", ephemeral=True)
         else:
-            await interaction.response.send_message(
-                "❌ Selected channel not found.", ephemeral=True
-            )
+            await interaction.followup.send("❌ ไม่พบช่องที่เลือก กรุณาตั้งค่าใหม่อีกครั้ง", ephemeral=True)
 
 
-class SetupView(discord.ui.View):
-
+# ------------------------------------------
+# 2. เมนูเลือกช่องแบบย่อย (Channel View)
+# ------------------------------------------
+class ChannelSelectView(discord.ui.View):
     def __init__(self):
-        super().__init__(timeout=None)
+        super().__init__(timeout=60)
 
     @discord.ui.select(
         cls=discord.ui.ChannelSelect,
         channel_types=[discord.ChannelType.text],
-        placeholder="📌 1. Select Channel...",
-        row=0,
+        placeholder="คลิกเลือกช่องข้อความ..."
     )
-    async def select_channel(
-        self, interaction: discord.Interaction, select: discord.ui.ChannelSelect
-    ):
+    async def select_channel(self, interaction: discord.Interaction, select: discord.ui.ChannelSelect):
         bot.selected_channel_id = select.values[0].id
-        selected_channel = select.values[0]
-        await interaction.response.send_message(
-            f"✅ Selected channel **#{selected_channel.name}**!",
-            ephemeral=True,
-        )
+        selected_chan = select.values[0]
+        await interaction.response.send_message(f"✅ เลือกช่อง **#{selected_chan.name}** เรียบร้อยแล้ว!", ephemeral=True)
 
-    @discord.ui.select(
-        placeholder="😀 2. Select Emoji (Default: 📢)",
-        options=[
-            discord.SelectOption(label="Cart / Shop", value="🛒", emoji="🛒"),
-            discord.SelectOption(label="Announcement", value="📢", emoji="📢"),
-            discord.SelectOption(label="Warning", value="⚠️", emoji="⚠️"),
-            discord.SelectOption(label="Event / Party", value="🎉", emoji="🎉"),
-            discord.SelectOption(label="Fire / Hot", value="🔥", emoji="🔥"),
-            discord.SelectOption(label="Info / Tips", value="💡", emoji="💡"),
-            discord.SelectOption(label="Website / Link", value="🌐", emoji="🌐"),
-        ],
-        row=1,
-    )
-    async def select_emoji(
-        self, interaction: discord.Interaction, select: discord.ui.Select
-    ):
-        bot.selected_emoji = select.values[0]
-        await interaction.response.send_message(
-            f"✅ Selected Emoji: {bot.selected_emoji}", ephemeral=True
-        )
 
-    @discord.ui.button(
-        label="📝 3. Enter Details & Banner & Website",
-        style=discord.ButtonStyle.green,
-        row=2,
-    )
-    async def open_modal(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ):
+# ------------------------------------------
+# 3. แผงปุ่มควบคุมหลัก (Main Setup Panel)
+# ------------------------------------------
+class SetupControlView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+
+    # ปุ่มที่ 1: เลือกช่อง
+    @discord.ui.button(label="📌 1. เลือกช่องที่จะส่ง", style=discord.ButtonStyle.primary, row=0, custom_id="btn_select_channel")
+    async def btn_select_channel(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_message("กรุณาเลือกช่องที่จะให้บอทส่งประกาศในเมนูด้านล่างนี้:", view=ChannelSelectView(), ephemeral=True)
+
+    # ปุ่มกลุ่มที่ 2: เลือก Emoji
+    @discord.ui.button(label="📢 ประกาศ", style=discord.ButtonStyle.secondary, row=1, custom_id="btn_e1")
+    async def emoji_1(self, interaction: discord.Interaction, button: discord.ui.Button):
+        bot.selected_emoji = "📢"
+        await interaction.response.send_message("✅ เลือก Emoji: 📢", ephemeral=True)
+
+    @discord.ui.button(label="🛒 สินค้า", style=discord.ButtonStyle.secondary, row=1, custom_id="btn_e2")
+    async def emoji_2(self, interaction: discord.Interaction, button: discord.ui.Button):
+        bot.selected_emoji = "🛒"
+        await interaction.response.send_message("✅ เลือก Emoji: 🛒", ephemeral=True)
+
+    @discord.ui.button(label="🎉 กิจกรรม", style=discord.ButtonStyle.secondary, row=1, custom_id="btn_e3")
+    async def emoji_3(self, interaction: discord.Interaction, button: discord.ui.Button):
+        bot.selected_emoji = "🎉"
+        await interaction.response.send_message("✅ เลือก Emoji: 🎉", ephemeral=True)
+
+    @discord.ui.button(label="⚠️ เตือน", style=discord.ButtonStyle.secondary, row=1, custom_id="btn_e4")
+    async def emoji_4(self, interaction: discord.Interaction, button: discord.ui.Button):
+        bot.selected_emoji = "⚠️"
+        await interaction.response.send_message("✅ เลือก Emoji: ⚠️", ephemeral=True)
+
+    # ปุ่มที่ 3: เปิดแบบฟอร์มกรอกข้อมูลเพื่อส่ง
+    @discord.ui.button(label="📝 2. กรอกข้อมูล & รูป & ลิงก์ เพื่อส่งประกาศ", style=discord.ButtonStyle.success, row=2, custom_id="btn_open_modal")
+    async def btn_open_modal(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not bot.selected_channel_id:
-            await interaction.response.send_message(
-                "⚠️ Please select a channel first!",
-                ephemeral=True,
-            )
+            await interaction.response.send_message("⚠️ กรุณากดปุ่ม **'📌 1. เลือกช่องที่จะส่ง'** ก่อนครับ!", ephemeral=True)
             return
 
         await interaction.response.send_modal(MessageModal())
 
 
-@bot.tree.command(
-    name="setup",
-    description="Setup notification system",
-)
+# ------------------------------------------
+# 4. คำสั่ง /setup
+# ------------------------------------------
+@bot.tree.command(name="setup", description="เปิดแผงปุ่มตั้งค่าระบบส่งข้อความแจ้งเตือน")
 async def setup(interaction: discord.Interaction):
     embed = discord.Embed(
-        title="⚙️ Notification Setup System",
+        title="⚙️ แผงควบคุมระบบแจ้งเตือน (Button Control)",
         description=(
-            "**Follow steps below to make an announcement:**\n\n"
-            "1️⃣ **Select Channel:** Choose where to send\n"
-            "2️⃣ **Select Emoji:** Choose prefix icon\n"
-            "3️⃣ **Enter Details:** Click green button to fill text, image, website"
+            "**วิธีใช้งานง่ายๆ 2 ขั้นตอน:**\n\n"
+            "1️⃣ กดปุ่ม **'📌 1. เลือกช่องที่จะส่ง'** แล้วเลือกห้องข้อความที่ต้องการ\n"
+            "2️⃣ (ตัวเลือก) เลือก Emoji นำหน้าหัวข้อที่ต้องการ\n"
+            "3️⃣ กดปุ่มสีเขียว **'📝 2. กรอกข้อมูล...'** เพื่อพิมพ์รายละเอียดและกดส่งประกาศ"
         ),
         color=discord.Color.blue(),
     )
-    await interaction.response.send_message(
-        embed=embed, view=SetupView(), ephemeral=True
-    )
+    await interaction.response.send_message(embed=embed, view=SetupControlView(), ephemeral=True)
 
 
 @bot.event
 async def on_ready():
-    print(f"✅ Bot is online as {bot.user.name}")
-
+    print(f"✅ บอทออนไลน์พร้อมใช้งาน: {bot.user.name}")
 
 TOKEN = os.getenv("DISCORD_TOKEN")
-
-if not TOKEN:
-    print("❌ DISCORD_TOKEN missing in environment variables.")
-else:
+if TOKEN:
     bot.run(TOKEN.strip())
+else:
+    print("❌ ไม่พบ DISCORD_TOKEN")
