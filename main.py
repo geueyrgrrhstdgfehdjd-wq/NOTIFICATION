@@ -28,7 +28,7 @@ class NotificationBot(commands.Bot):
 bot = NotificationBot()
 
 # ------------------------------------------
-# ฟังก์ชันช่วยค้นหา Emoji (รวมถึง Custom Emoji จากเซิร์ฟอื่น)
+# ฟังก์ชันช่วยค้นหา Emoji (รวมถึง Custom Emoji ข้ามเซิร์ฟ)
 # ------------------------------------------
 def resolve_emoji(emoji_input: str):
     if not emoji_input:
@@ -47,7 +47,7 @@ def resolve_emoji(emoji_input: str):
     return clean_input
 
 # ------------------------------------------
-# 1. หน้าต่าง Modal กรอกข้อมูลทุกอย่างจบในหน้าเดียว
+# 1. หน้าต่าง Modal กรอกข้อมูล
 # ------------------------------------------
 class SingleSetupModal(discord.ui.Modal, title="ตั้งค่าและส่งข้อความแจ้งเตือน"):
     channel_input = discord.ui.TextInput(
@@ -88,20 +88,21 @@ class SingleSetupModal(discord.ui.Modal, title="ตั้งค่าและ�
     )
 
     async def on_submit(self, interaction: discord.Interaction):
-        await interaction.response.defer(ephemeral=True)
+        # ⚡ ป้องกันไม่ตอบสนอง: สั่ง Defer ทันทีเป็นอันดับแรก (แสดงสถานะกำลังประมวลผลให้ทุกคนเห็น)
+        await interaction.response.defer(thinking=True, ephemeral=False)
 
-        # 1. ค้นหาช่องข้อความจากชื่อที่พิมพ์
+        # 1. ค้นหาช่องข้อความ
         target_channel_name = self.channel_input.value.strip().lstrip("#")
         target_channel = discord.utils.get(interaction.guild.text_channels, name=target_channel_name)
 
         if not target_channel:
-            await interaction.followup.send(f"❌ ไม่พบช่องข้อความชื่อ **#{target_channel_name}** ในเซิร์ฟเวอร์นี้", ephemeral=True)
+            await interaction.followup.send(f"❌ ไม่พบช่องข้อความชื่อ **#{target_channel_name}** ในเซิร์ฟเวอร์นี้", ephemeral=False)
             return
 
-        # 2. แปลงค่า Emoji (รองรับ Custom Emoji ข้ามเซิร์ฟ)
+        # 2. แปลงค่า Emoji
         selected_emoji = resolve_emoji(self.emoji_input.value)
 
-        # 3. แยกค่ารูปภาพ และ ปุ่มเว็บไซต์จากช่อง extra_input
+        # 3. แยกค่ารูปภาพ และ ปุ่มเว็บไซต์
         banner_url = None
         btn_label = None
         btn_url = None
@@ -131,7 +132,7 @@ class SingleSetupModal(discord.ui.Modal, title="ตั้งค่าและ�
         if banner_url and (banner_url.startswith("http://") or banner_url.startswith("https://")):
             embed.set_image(url=banner_url)
 
-        # 5. สร้างปุ่มกดลิงก์เว็บไซต์ (ถ้ามี)
+        # 5. สร้างปุ่มกดลิงก์เว็บไซต์
         out_view = None
         if btn_url and btn_label:
             if not (btn_url.startswith("http://") or btn_url.startswith("https://")):
@@ -155,32 +156,33 @@ class SingleSetupModal(discord.ui.Modal, title="ตั้งค่าและ�
             else:
                 await target_channel.send(content=content_text, embed=embed)
 
-            await interaction.followup.send(f"✅ ส่งประกาศพร้อมแท็ก @everyone ไปยังช่อง {target_channel.mention} เรียบร้อยแล้ว!", ephemeral=True)
+            await interaction.followup.send(f"✅ ส่งประกาศพร้อมแท็ก @everyone ไปยังช่อง {target_channel.mention} เรียบร้อยแล้ว!", ephemeral=False)
         except Exception as err:
-            await interaction.followup.send(f"❌ ไม่สามารถส่งข้อความได้ โปรดตรวจสอบสิทธิ์ของบอท: {err}", ephemeral=True)
+            await interaction.followup.send(f"❌ ไม่สามารถส่งข้อความได้ โปรดตรวจสอบสิทธิ์ของบอท: {err}", ephemeral=False)
 
 
 # ------------------------------------------
-# 2. แผงควบคุมที่มีปุ่มเดียว
+# 2. แผงควบคุม (แสดงผลสาธารณะ Public UI)
 # ------------------------------------------
 class SetupControlView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
 
-    @discord.ui.button(label="🚀 คลิกที่นี่เพื่อกรอกข้อมูลและส่งประกาศ", style=discord.ButtonStyle.success, custom_id="btn_single_setup")
+    @discord.ui.button(label="🚀 คลิกที่นี่เพื่อกรอกข้อมูลและส่งประกาศ", style=discord.ButtonStyle.success, custom_id="btn_single_setup_v2")
     async def btn_single_setup(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # เรียก Modal ขึ้นมาทันที (การเรียก Modal ห้ามใส่ defer)
         await interaction.response.send_modal(SingleSetupModal())
 
 
 # ------------------------------------------
-# 3. คำสั่ง /setup
+# 3. คำสั่ง /setup (ทุกคนมองเห็นได้)
 # ------------------------------------------
 @bot.tree.command(name="setup", description="เปิดหน้าต่างสร้างประกาศแจ้งเตือนพร้อมแท็กทุกคน")
 async def setup(interaction: discord.Interaction):
     embed = discord.Embed(
         title="⚙️ ระบบสร้างประกาศแจ้งเตือนอัตโนมัติ",
         description=(
-            "กดปุ่มสีเขียวด้านล่างเพียงปุ่มเดียว เพื่อกรอกข้อมูลทั้งหมดและส่งประกาศทันที!\n\n"
+            "กดปุ่มสีเขียวด้านล่างเพื่อกรอกข้อมูลและส่งประกาศทันที!\n\n"
             "📌 **ฟังก์ชันเด่น:**\n"
             "• แท็ก **@everyone** ให้อัตโนมัติทุกประกาศ\n"
             "• รองรับ Custom Emoji ข้ามเซิร์ฟเวอร์ (ใส่แบบ `:cart:`, `:fire:`)\n"
@@ -188,7 +190,8 @@ async def setup(interaction: discord.Interaction):
         ),
         color=discord.Color.green(),
     )
-    await interaction.response.send_message(embed=embed, view=SetupControlView(), ephemeral=True)
+    # ปรับ ephemeral=False เพื่อให้ทุกคนในช่องเห็น UI นี้
+    await interaction.response.send_message(embed=embed, view=SetupControlView(), ephemeral=False)
 
 
 @bot.event
